@@ -6,7 +6,8 @@
         "${workspaceFolder}/**",
         "c:\\Users\\dfoch\\OneDrive - Great Valley School District\\Class\\Robotics\\Pros\\293YLemLib\\include",
         "c:\\Users\\dfoch\\OneDrive\\Documents\\GitHub\\293Y-Lemlib\\include",
-        "c:\\Users\\dfoch\\OneDrive\\Documents\\GitHub\\MCLLemlib\\include"
+        "c:\\Users\\dfoch\\OneDrive\\Documents\\GitHub\\MCLLemlib\\include",
+        "c:\\Users\\dfoch\\OneDrive\\Documents\\GitHub\\MCL-Lemlib\\include"
       ],
       "defines": [
         "_DEBUG",
@@ -19,7 +20,7 @@
       "intelliSenseMode": "gcc-arm",
       "browse": {
         "path": [
-          "c:\\Users\\dfoch\\OneDrive\\Documents\\GitHub\\MCLLemlib"
+          "c:\\Users\\dfoch\\OneDrive\\Documents\\GitHub\\MCL-Lemlib"
         ],
         "limitSymbolsToIncludedHeaders": true,
         "databaseFilename": ""
