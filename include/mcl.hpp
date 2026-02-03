@@ -465,7 +465,7 @@ private:
       }
 
       lastPose = currentPose;
-      pros::delay(20);
+      pros::delay(5);  // Run MCL update every 5ms for real-time localization
     }
   }
 };

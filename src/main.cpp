@@ -5,7 +5,6 @@
 #include "lemlib/chassis/trackingWheel.hpp"
 #include "mcl.hpp"
 #include "pros/misc.h"
-#include "pros/motors.hpp"
 #include "pros/rtos.hpp"
 
 // controller
