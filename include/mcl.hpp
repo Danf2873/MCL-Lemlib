@@ -1,6 +1,9 @@
 #pragma once
 
+#include "lemlib/chassis/chassis.hpp"
 #include "lemlib/pose.hpp"
+#include "pros/distance.hpp"
+#include "pros/rtos.hpp"
 #include <algorithm>
 #include <cmath>
 #include <random>
@@ -21,7 +24,7 @@ struct Particle {
  *
  * @tparam N The number of particles to use
  */
-template <size_t N> class MonteCarlo {
+class MonteCarlo {
 public:
   /**
    * @brief Construct a new Monte Carlo object
@@ -30,9 +33,12 @@ public:
    * @param driveNoise The standard deviation of the drivetrain movement noise
    * (inches)
    * @param turnNoise The standard deviation of the turning noise (radians)
+   * @param numParticles The number of particles to use
    */
-  MonteCarlo(lemlib::Pose initialPose, double driveNoise, double turnNoise)
-      : driveNoise(driveNoise), turnNoise(turnNoise), wSlow(0), wFast(0) {
+  MonteCarlo(lemlib::Pose initialPose, double driveNoise, double turnNoise,
+             size_t numParticles)
+      : driveNoise(driveNoise), turnNoise(turnNoise),
+        numParticles(numParticles), wSlow(0), wFast(0) {
     std::random_device rd;
     gen = std::mt19937(rd());
     setPose(initialPose);
@@ -51,9 +57,9 @@ public:
     std::normal_distribution<double> distTheta(pose.theta,
                                                0.05); // ~3 degrees spread
 
-    for (size_t i = 0; i < N; ++i) {
-      particles.push_back(
-          {lemlib::Pose(distX(gen), distY(gen), distTheta(gen)), 1.0 / N});
+    for (size_t i = 0; i < numParticles; ++i) {
+      particles.push_back({lemlib::Pose(distX(gen), distY(gen), distTheta(gen)),
+                           1.0 / numParticles});
     }
   }
 
@@ -101,8 +107,8 @@ public:
         // Gaussian likelihood with clipping to prevent weight explosion
         double diff = actual - expected;
         double exponent = -(diff * diff) / (2 * sensorStandardDeviation *
-                                           sensorStandardDeviation);
-        // Clamp exponent to prevent overflow: exp(-x) where x > 100 ≈ 0
+                                            sensorStandardDeviation);
+        // Clamp exponent to prevent overflow: exp(-x) where x > 100 approx 0
         exponent = std::max(-100.0, exponent);
         likelihood *= std::exp(exponent);
       }
@@ -112,7 +118,7 @@ public:
 
     // Bayesian confidence tracking (Augmented MCL)
     // We track a slow and fast moving average of the total weight
-    double avgWeight = totalWeight / N;
+    double avgWeight = totalWeight / numParticles;
     if (wSlow == 0) {
       wSlow = avgWeight;
       wFast = avgWeight; // Initialize wFast along with wSlow
@@ -129,7 +135,7 @@ public:
     } else {
       // If all weights are zero, reset to uniform (or handle kidnap)
       for (auto &p : particles) {
-        p.weight = 1.0 / N;
+        p.weight = 1.0 / numParticles;
       }
     }
   }
@@ -155,15 +161,16 @@ public:
     std::uniform_real_distribution<double> fieldY(-72.0, 72.0);
     std::uniform_real_distribution<double> fieldTheta(0, 360);
 
-    for (size_t i = 0; i < N; ++i) {
+    for (size_t i = 0; i < numParticles; ++i) {
       if (randProb(gen) < pRandom) {
         // Inject a random particle (Kidnapped robot recovery)
         newParticles.push_back(
-            {lemlib::Pose(fieldX(gen), fieldY(gen), fieldTheta(gen)), 1.0 / N});
+            {lemlib::Pose(fieldX(gen), fieldY(gen), fieldTheta(gen)),
+             1.0 / numParticles});
       } else {
         newParticles.push_back(particles[dist(gen)]);
       }
-      newParticles.back().weight = 1.0 / N;
+      newParticles.back().weight = 1.0 / numParticles;
     }
 
     particles = newParticles;
@@ -213,6 +220,7 @@ private:
   std::vector<Particle> particles;
   double driveNoise;
   double turnNoise;
+  size_t numParticles; // runtime variable
 
   // Augmented MCL Bayesian tracking variables
   double wSlow;
@@ -233,7 +241,7 @@ private:
    */
   double getExpectedDistance(lemlib::Pose robotPose,
                              lemlib::Pose sensorOffset) {
-    // LemLib uses: 0° = Forward (Y+), Clockwise = Positive
+    // LemLib uses: 0deg = Forward (Y+), Clockwise = Positive
     // Convert to standard math coordinates for calculation
     double robotAngleRad = (90.0 - robotPose.theta) * M_PI / 180.0;
     double sensorAngleRad =
@@ -345,6 +353,121 @@ public:
 
 private:
   std::vector<double> beliefs;
+};
+
+struct MCLSensors {
+  std::vector<pros::Distance *> sensors;
+  std::vector<lemlib::Pose> offsets;
+};
+
+class MCLChassis : public lemlib::Chassis {
+public:
+  MCLChassis(lemlib::Drivetrain drivetrain,
+             lemlib::ControllerSettings lateralSettings,
+             lemlib::ControllerSettings angularSettings,
+             lemlib::OdomSensors sensors, MCLSensors mclSensors,
+             lemlib::DriveCurve *throttleCurve = &lemlib::defaultDriveCurve,
+             lemlib::DriveCurve *steerCurve = &lemlib::defaultDriveCurve)
+      : lemlib::Chassis(drivetrain, lateralSettings, angularSettings, sensors,
+                        throttleCurve, steerCurve),
+        mcl(lemlib::Pose(0, 0, 0), 0.05, 0.01, 10000), // Default: 10k particles
+        mclSensors(mclSensors) {}
+
+  void calibrate(bool calibrateIMU = true) {
+    lemlib::Chassis::calibrate(calibrateIMU);
+    lemlib::Pose p = getPose();
+    mcl.setPose(p);
+    startTask();
+  }
+
+  void setPose(float x, float y, float theta, bool radians = false) {
+    lemlib::Chassis::setPose(x, y, theta, radians);
+    lemlib::Pose p(x, y, theta);
+    if (radians)
+      p.theta = p.theta * 180.0 / M_PI;
+    mcl.setPose(p);
+  }
+
+  void setPose(lemlib::Pose pose, bool radians = false) {
+    lemlib::Chassis::setPose(pose, radians);
+    if (radians)
+      pose.theta = pose.theta * 180.0 / M_PI;
+    mcl.setPose(pose);
+  }
+
+  // Only expose getters, let MCL loop handle internal updates
+  double getMCLConfidence() { return mcl.getConfidence(); }
+
+  lemlib::Pose getMCLPose() { return mcl.getPose(); }
+
+private:
+  MonteCarlo mcl;
+  MCLSensors mclSensors;
+  pros::Task *mclTask = nullptr;
+
+  void startTask() {
+    if (mclTask == nullptr) {
+      mclTask = new pros::Task([this] { this->mclLoop(); });
+    }
+  }
+
+  void mclLoop() {
+    lemlib::Pose lastPose = lemlib::Chassis::getPose();
+    double accumulatedDistance = 0;
+
+    while (true) {
+      lemlib::Pose currentPose = lemlib::Chassis::getPose();
+
+      // Calculate deltas from odometry
+      double dx = currentPose.x - lastPose.x;
+      double dy = currentPose.y - lastPose.y;
+      double dt = currentPose.theta - lastPose.theta;
+
+      // Prediction step
+      mcl.predict(dx, dy, dt);
+
+      // Use Pose::distance for integration
+      accumulatedDistance += currentPose.distance(lastPose);
+
+      // Update step (every 2 inches or 5 degrees)
+      if (accumulatedDistance > 2.0 || std::abs(dt) > 5.0) {
+        std::vector<double> readings;
+        std::vector<lemlib::Pose> offsets;
+
+        for (size_t i = 0; i < mclSensors.sensors.size(); ++i) {
+          double dist = mclSensors.sensors[i]->get_distance();
+          if (dist > 0 && dist < 2000) {
+            readings.push_back(dist / 25.4); // mm to inches
+            offsets.push_back(mclSensors.offsets[i]);
+          }
+        }
+
+        if (!readings.empty()) {
+          mcl.update(readings, offsets, 1.5);
+          mcl.resample();
+          accumulatedDistance = 0;
+
+          // Soft-fusion
+          lemlib::Pose mclPose = mcl.getPose();
+          lemlib::Pose chassisPose = lemlib::Chassis::getPose();
+          const float K_FUSION = 0.15;
+
+          // Note: Pose::lerp ignores heading, so we manually fuse
+          lemlib::Pose fusedPose(
+              chassisPose.x + (mclPose.x - chassisPose.x) * K_FUSION,
+              chassisPose.y + (mclPose.y - chassisPose.y) * K_FUSION,
+              chassisPose.theta +
+                  (mclPose.theta - chassisPose.theta) * K_FUSION);
+
+          // Call BASE setPose to avoid resetting MCL particles in the override
+          lemlib::Chassis::setPose(fusedPose);
+        }
+      }
+
+      lastPose = currentPose;
+      pros::delay(20);
+    }
+  }
 };
 
 } // namespace mcl
