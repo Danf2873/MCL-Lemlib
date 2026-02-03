@@ -1,0 +1,30 @@
+{
+  "configurations": [
+    {
+      "name": "PROS Project",
+      "includePath": [
+        "${workspaceFolder}/**",
+        "c:\\Users\\dfoch\\OneDrive - Great Valley School District\\Class\\Robotics\\Pros\\293YLemLib\\include",
+        "c:\\Users\\dfoch\\OneDrive\\Documents\\GitHub\\293Y-Lemlib\\include",
+        "c:\\Users\\dfoch\\OneDrive\\Documents\\GitHub\\MCLLemlib\\include"
+      ],
+      "defines": [
+        "_DEBUG",
+        "UNICODE",
+        "_UNICODE"
+      ],
+      "compilerPath": "c:\\Users\\dfoch\\AppData\\Roaming\\Antigravity\\User\\globalStorage\\sigbots.pros\\install\\pros-toolchain-windows\\usr\\bin\\arm-none-eabi-g++",
+      "cStandard": "gnu11",
+      "cppStandard": "gnu++20",
+      "intelliSenseMode": "gcc-arm",
+      "browse": {
+        "path": [
+          "c:\\Users\\dfoch\\OneDrive\\Documents\\GitHub\\MCLLemlib"
+        ],
+        "limitSymbolsToIncludedHeaders": true,
+        "databaseFilename": ""
+      }
+    }
+  ],
+  "version": 4
+}
